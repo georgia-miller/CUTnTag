@@ -1,23 +1,27 @@
 #!/bin/bash
-#PBS -N Script1_final_STM12023_WT_pBMDM
-#PBS -l walltime=72:00:00
-#PBS -l select=1:ncpus=16:mem=64gb
-#PBS -m ea
+#SBATCH --job-name=Script1_H3K4me1
+#SBATCH --time=72:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-users=k2477939@kcl.ac.uk
 
-##############################################
-####### set basename and sample names ########
-##############################################
+
+#######################################################
+############ set basename and sample names ############
+#######################################################
 
 base_name=STM12023_WT_pBMDM
 
 base_name_1=${base_name}_Rep1
 base_name_2=${base_name}_Rep2
 base_name_3=${base_name}_Rep3
-base_name_4=${base_name}_Rep4
 
-########################################################
-###### check programme & others paths are correct ######
-########################################################
+#######################################################
+###### check programme & other paths are correct ######
+#######################################################
 
 module load anaconda3/personal
 
@@ -34,9 +38,10 @@ blacklisted_mitochondrial_regions=$HOME/genomes/mouse/Mus_musculus/UCSC/mm10/mm1
 blacklisted_regions_only=$HOME/genomes/mouse/Mus_musculus/UCSC/mm10/mm10-blacklist.v2.bed
 tss=$HOME/genomes/mouse/Mus_musculus/UCSC/mm10/Annotation/Archives/archive-2015-07-17-14-33-26/Genes/refTSS_v3.3_mouse_coordinate.mm10.bed
 
-##############################################
-###### align ATAC-Seq reads with bowtie ######
-##############################################
+######################################################
+########## align ATAC-Seq reads with bowtie ##########
+######################################################
+
 
 #############
 ### Rep 1 ###
@@ -221,70 +226,11 @@ rm ${base_name_3}.deduplicated.bam
 rm ${base_name_3}.deduplicated.cleaned.bam
 rm -r ${ATAC_dir_output}/${base_name_3}/picard_temp
 
-#############
-### Rep 4 ###
-#############
 
-mkdir ${ATAC_dir_output}/${base_name_4}
-mkdir ${ATAC_dir_output}/${base_name_4}/picard_temp
-cd ${ATAC_dir_output}/${base_name_4}
+#####################################################
+############## peak calling with MACS2 ##############
+#####################################################
 
-#### trimming ####
-
-source activate Trim_galore
-
-trim_galore --paired --cores 4 --nextera ${ATAC_dir_input}/${base_name_4}_R1.fastq.gz ${ATAC_dir_input}/${base_name_4}_R2.fastq.gz
-
-conda deactivate
-
-#### alignment ####
-
-source activate ATAC_pipeline_1
-
-bowtie2 --threads 8 --very-sensitive -X 1000 -k 10 -x ${ATAC_index_genome} \
--1 ${base_name_4}_R1_val_1.fq.gz -2 ${base_name_4}_R2_val_2.fq.gz \
-| samtools view -@ 8 -b -o ${base_name_4}.bam - #align ATAC-seq with bowtie
-
-conda deactivate
-
-#### deduplicate ####
-
-source activate picard
-
-java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD SortSam INPUT=${base_name_4}.bam OUTPUT=${base_name_4}.picardchrsorted.bam \
-SORT_ORDER=coordinate TMP_DIR=${ATAC_dir_output}/${base_name_4}/picard_temp VALIDATION_STRINGENCY=LENIENT
-
-java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD MarkDuplicates INPUT=${base_name_4}.picardchrsorted.bam OUTPUT=${base_name_4}.deduplicated.bam \
-TMP_DIR=${ATAC_dir_output}/${base_name_4}/picard_temp VALIDATION_STRINGENCY=LENIENT METRICS_FILE=${base_name_4}_PicardMarkDuplicates.txt REMOVE_DUPLICATES=true
-
-conda deactivate
-
-#### remove chrM and blacklist reads ####
-
-source activate ATAC_pipeline_1
-
-intersectBed -v -a ${base_name_4}.deduplicated.bam -b ${blacklisted_mitochondrial_regions} > \
-${base_name_4}.deduplicated.cleaned.bam
-
-samtools sort -o ${base_name_4}.deduplicated.cleaned.chrsorted.bam -T ${base_name_4}.deduplicated.cleaned.chrsorted -@ 16 \
-${base_name_4}.deduplicated.cleaned.bam
-
-samtools index ${base_name_4}.deduplicated.cleaned.chrsorted.bam
-
-conda deactivate
-
-#### cleanup unneeded files ####
-
-rm ${base_name_4}_R1_val_1.fq.gz
-rm ${base_name_4}_R2_val_2.fq.gz 
-rm ${base_name_4}.bam
-rm ${base_name_4}.deduplicated.bam
-rm ${base_name_4}.deduplicated.cleaned.bam
-rm -r ${ATAC_dir_output}/${base_name_4}/picard_temp
-
-##############################################
-########## peak calling with MACS2 ###########
-##############################################
 
 source activate ATAC_pipeline_2
 
@@ -324,34 +270,21 @@ macs2 callpeak -t ${base_name_3}.deduplicated.cleaned.chrsorted.bam -f BAMPE -n 
 
 sort -k1,1 -k2,2n ${base_name_3}_peaks.narrowPeak > ${base_name_3}.sorted.narrowPeak
 
-#####################
-####### Rep4 ########
-#####################
 
-cd ${ATAC_dir_output}/${base_name_4}
+#######################################################
+############## merge ATAC-Seq replicates ##############
+#######################################################
 
-macs2 callpeak -t ${base_name_4}.deduplicated.cleaned.chrsorted.bam -f BAMPE -n ${base_name_4} \
--g mm --cutoff-analysis --keep-dup all -p 0.01 \
---outdir ${ATAC_dir_output}/${base_name_4}/ --nolambda --bdg --SPMR
-
-sort -k1,1 -k2,2n ${base_name_4}_peaks.narrowPeak > ${base_name_4}.sorted.narrowPeak
-
-conda deactivate
-
-##############################################
-########## merge ATAC-Seq replicates #########
-##############################################
 
 mkdir ${ATAC_dir_output}/${base_name}
 cd ${ATAC_dir_output}/${base_name}
 
 source activate ATAC_pipeline_1
 
-samtools merge ${base_name}.merged.bam \
+samtools merge -@ 16 ${base_name}.merged.bam \
 ${ATAC_dir_output}/${base_name_1}/${base_name_1}.deduplicated.cleaned.chrsorted.bam \
 ${ATAC_dir_output}/${base_name_2}/${base_name_2}.deduplicated.cleaned.chrsorted.bam \
-${ATAC_dir_output}/${base_name_3}/${base_name_3}.deduplicated.cleaned.chrsorted.bam \
-${ATAC_dir_output}/${base_name_4}/${base_name_4}.deduplicated.cleaned.chrsorted.bam -@ 16
+${ATAC_dir_output}/${base_name_3}/${base_name_3}.deduplicated.cleaned.chrsorted.bam
 
 samtools sort -o ${base_name}.merged.chrsorted.bam -T ${base_name}.merged.chrsorted \
 -@ 16 ${base_name}.merged.bam
@@ -362,9 +295,9 @@ rm ${base_name}.merged.bam
 
 conda deactivate
 
-##############################################
-## call peaks on merged ATAC-Seq replicates ##
-##############################################
+######################################################
+###### call peaks on merged ATAC-Seq replicates ######
+######################################################
 
 source activate ATAC_pipeline_2
 
@@ -376,9 +309,9 @@ sort -k1,1 -k2,2n ${base_name}_peaks.narrowPeak > ${base_name}.sorted.narrowPeak
 
 conda deactivate
 
-##############################################
-######## identify reproducible peaks #########
-##############################################
+######################################################
+############ identify reproducible peaks #############
+######################################################
 
 source activate bedtools
 
@@ -392,10 +325,6 @@ ${base_name}_merged.intersect_${base_name_1}_${base_name_2}.sorted.bed
 
 bedtools intersect -wa -a ${base_name}_merged.intersect_${base_name_1}_${base_name_2}.sorted.bed \
 -b ${ATAC_dir_output}/${base_name_3}/${base_name_3}.sorted.narrowPeak > \
-${base_name}_merged.intersect_${base_name_1}_${base_name_2}_${base_name_3}.sorted.bed
-
-bedtools intersect -wa -a ${base_name}_merged.intersect_${base_name_1}_${base_name_2}_${base_name_3}.sorted.bed \
--b ${ATAC_dir_output}/${base_name_4}/${base_name_4}.sorted.narrowPeak > \
 ${base_name}.consensus_peaks.stringent.intermediary.bed
 
 bedtools merge -i ${base_name}.consensus_peaks.stringent.intermediary.bed > \
@@ -403,5 +332,4 @@ ${base_name}.consensus_peaks.stringent.bed
 
 rm ${base_name}_merged.intersect_${base_name_1}.sorted.bed
 rm ${base_name}_merged.intersect_${base_name_1}_${base_name_2}.sorted.bed
-rm ${base_name}_merged.intersect_${base_name_1}_${base_name_2}_${base_name_3}.sorted.bed
 rm ${base_name}.consensus_peaks.stringent.intermediary.bed
