@@ -13,11 +13,11 @@
 ############ set basename and sample names ############
 #######################################################
 
-base_name=STM12023_WT_pBMDM
+base_name=H3K4me1
 
-base_name_1=${base_name}_Rep1
-base_name_2=${base_name}_Rep2
-base_name_3=${base_name}_Rep3
+# define an array of bio replicate names that can be looped over
+replicates=("${base_name}_Rep1" "${base_name}_Rep2" "${base_name}_Rep3")
+
 
 #######################################################
 ###### check programme & other paths are correct ######
@@ -38,237 +38,81 @@ blacklisted_mitochondrial_regions=$HOME/genomes/mouse/Mus_musculus/UCSC/mm10/mm1
 blacklisted_regions_only=$HOME/genomes/mouse/Mus_musculus/UCSC/mm10/mm10-blacklist.v2.bed
 tss=$HOME/genomes/mouse/Mus_musculus/UCSC/mm10/Annotation/Archives/archive-2015-07-17-14-33-26/Genes/refTSS_v3.3_mouse_coordinate.mm10.bed
 
-######################################################
-########## align ATAC-Seq reads with bowtie ##########
-######################################################
+# define timestamp to use for logs
+timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
 
-#############
-### Rep 1 ###
-#############
+#############################################################
+## align ATAC-Seq reads with bowtie & peak call with MACS2 ##
+#############################################################
 
-mkdir ${ATAC_dir_output}/${base_name_1}
-mkdir ${ATAC_dir_output}/${base_name_1}/picard_temp
-cd ${ATAC_dir_output}/${base_name_1}
+source activate CUTnTag_processing_env
 
-#### trimming ####
+for rep in "${replicates[@]}"; do
+	mkdir -p ${ATAC_dir_output}/${rep}/picard_temp
+	cd ${ATAC_dir_output}/${rep}
 
-source activate Trim_galore
+	echo "########[`timestamp`] Starting processing for CUT&Tag ${rep}########"
 
-trim_galore --paired --cores 4 --nextera ${ATAC_dir_input}/${base_name_1}_R1.fastq.gz ${ATAC_dir_input}/${base_name_1}_R2.fastq.gz
+	#### trimming ####
 
-conda deactivate
+	trim_galore --paired --cores 4 --nextera ${ATAC_dir_input}/${rep}_R1.fastq.gz ${ATAC_dir_input}/${rep}_R2.fastq.gz
 
-#### alignment ####
+	echo "[`timestamp`] Finished trimming for ${rep}"
 
-source activate ATAC_pipeline_1
+	#### alignment ####
 
-bowtie2 --threads 8 --very-sensitive -X 1000 -k 10 -x ${ATAC_index_genome} \
--1 ${base_name_1}_R1_val_1.fq.gz -2 ${base_name_1}_R2_val_2.fq.gz \
-| samtools view -@ 8 -b -o ${base_name_1}.bam - #align ATAC seq with bowtie
+	bowtie2 --threads 8 --very-sensitive -X 1000 -k 10 -x ${ATAC_index_genome} \
+	-1 ${rep}_R1_val_1.fq.gz -2 ${rep}_R2_val_2.fq.gz \
+	| samtools view -@ 8 -b -o ${rep}.bam - #align ATAC seq with bowtie
 
-conda deactivate
+	echo "[`timestamp`] Finished alignment for ${rep}"
 
-#### deduplicate ####
+	#### deduplicate ####
 
-source activate picard
+	java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD SortSam INPUT=${rep}.bam OUTPUT=${rep}.picardchrsorted.bam \
+	SORT_ORDER=coordinate TMP_DIR=${ATAC_dir_output}/${rep}/picard_temp VALIDATION_STRINGENCY=LENIENT
 
-java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD SortSam INPUT=${base_name_1}.bam OUTPUT=${base_name_1}.picardchrsorted.bam \
-SORT_ORDER=coordinate TMP_DIR=${ATAC_dir_output}/${base_name_1}/picard_temp VALIDATION_STRINGENCY=LENIENT
+	java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD MarkDuplicates INPUT=${rep}.picardchrsorted.bam OUTPUT=${rep}.deduplicated.bam \
+	TMP_DIR=${ATAC_dir_output}/${rep}/picard_temp VALIDATION_STRINGENCY=LENIENT METRICS_FILE=${rep}_PicardMarkDuplicates.txt REMOVE_DUPLICATES=true
 
-java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD MarkDuplicates INPUT=${base_name_1}.picardchrsorted.bam OUTPUT=${base_name_1}.deduplicated.bam \
-TMP_DIR=${ATAC_dir_output}/${base_name_1}/picard_temp VALIDATION_STRINGENCY=LENIENT METRICS_FILE=${base_name_1}_PicardMarkDuplicates.txt REMOVE_DUPLICATES=true
+	echo "[`timestamp`] Finished marking duplicates for ${rep}"
 
-conda deactivate
+	#### remove chrM and blacklist reads ####
 
-#### remove chrM and blacklist reads ####
+	intersectBed -v -a ${rep}.deduplicated.bam -b ${blacklisted_mitochondrial_regions} > \
+	${rep}.deduplicated.cleaned.bam
 
-source activate ATAC_pipeline_1
+	samtools sort -o ${rep}.deduplicated.cleaned.chrsorted.bam -T ${rep}.deduplicated.cleaned.chrsorted -@ 16 \
+	${rep}.deduplicated.cleaned.bam
 
-intersectBed -v -a ${base_name_1}.deduplicated.bam -b ${blacklisted_mitochondrial_regions} > \
-${base_name_1}.deduplicated.cleaned.bam
+	samtools index ${rep}.deduplicated.cleaned.chrsorted.bam #index sorted deduplicated bam
 
-samtools sort -o ${base_name_1}.deduplicated.cleaned.chrsorted.bam -T ${base_name_1}.deduplicated.cleaned.chrsorted -@ 16 \
-${base_name_1}.deduplicated.cleaned.bam
+	echo "[`timestamp`] Finished filtering for ${rep}"
 
-samtools index ${base_name_1}.deduplicated.cleaned.chrsorted.bam #index sorted deduplicated bam
+	#### cleanup unneeded files ####
 
-conda deactivate
+	rm  ${rep}_R1_val_1.fq.gz \
+		${rep}_R2_val_2.fq.gz \
+		${rep}.bam \
+		${rep}.deduplicated.bam \
+		${rep}.deduplicated.cleaned.bam
+	rm -r ${ATAC_dir_output}/${rep}/picard_temp
 
-#### cleanup unneeded files ####
+	echo "[`timestamp`] Finished processing ${rep}"
 
-rm ${base_name_1}_R1_val_1.fq.gz
-rm ${base_name_1}_R2_val_2.fq.gz 
-rm ${base_name_1}.bam
-rm ${base_name_1}.deduplicated.bam
-rm ${base_name_1}.deduplicated.cleaned.bam
-rm -r ${ATAC_dir_output}/${base_name_1}/picard_temp
+	echo "[`timestamp`] Starting peak calling for ${rep}"
+	
+	macs2 callpeak -t ${rep}.deduplicated.cleaned.chrsorted.bam -f BAMPE -n ${rep} \
+	-g mm --keep-dup all -p 0.01 \
+	--outdir ${ATAC_dir_output}/${rep}/ --nolambda --bdg --SPMR
 
-#############
-### Rep 2 ###
-#############
+	sort -k1,1 -k2,2n ${rep}_peaks.narrowPeak > ${rep}.sorted.narrowPeak
 
-mkdir ${ATAC_dir_output}/${base_name_2}
-mkdir ${ATAC_dir_output}/${base_name_2}/picard_temp
-cd ${ATAC_dir_output}/${base_name_2}
+	echo "[`timestamp`] Finished peak calling for ${rep}"
 
-#### trimming ####
 
-source activate Trim_galore
-
-trim_galore --paired --cores 4 --nextera ${ATAC_dir_input}/${base_name_2}_R1.fastq.gz ${ATAC_dir_input}/${base_name_2}_R2.fastq.gz
-
-conda deactivate
-
-#### alignment ####
-
-source activate ATAC_pipeline_1
-
-bowtie2 --threads 8 --very-sensitive -X 1000 -k 10 -x ${ATAC_index_genome} \
--1 ${base_name_2}_R1_val_1.fq.gz -2 ${base_name_2}_R2_val_2.fq.gz \
-| samtools view -@ 8 -b -o ${base_name_2}.bam - #align ATAC seq with bowtie
-
-conda deactivate
-
-#### deduplicate ####
-
-source activate picard
-
-java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD SortSam INPUT=${base_name_2}.bam OUTPUT=${base_name_2}.picardchrsorted.bam \
-SORT_ORDER=coordinate TMP_DIR=${ATAC_dir_output}/${base_name_2}/picard_temp VALIDATION_STRINGENCY=LENIENT
-
-java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD MarkDuplicates INPUT=${base_name_2}.picardchrsorted.bam OUTPUT=${base_name_2}.deduplicated.bam \
-TMP_DIR=${ATAC_dir_output}/${base_name_2}/picard_temp VALIDATION_STRINGENCY=LENIENT METRICS_FILE=${base_name_2}_PicardMarkDuplicates.txt REMOVE_DUPLICATES=true
-
-conda deactivate
-
-#### remove chrM and blacklist reads ####
-
-source activate ATAC_pipeline_1
-
-intersectBed -v -a ${base_name_2}.deduplicated.bam -b ${blacklisted_mitochondrial_regions} > \
-${base_name_2}.deduplicated.cleaned.bam
-
-samtools sort -o ${base_name_2}.deduplicated.cleaned.chrsorted.bam -T ${base_name_2}.deduplicated.cleaned.chrsorted -@ 16 \
-${base_name_2}.deduplicated.cleaned.bam
-
-samtools index ${base_name_2}.deduplicated.cleaned.chrsorted.bam #index sorted deduplicated bam
-
-conda deactivate
-
-#### cleanup unneeded files ####
-
-rm ${base_name_2}_R1_val_1.fq.gz
-rm ${base_name_2}_R2_val_2.fq.gz 
-rm ${base_name_2}.bam
-rm ${base_name_2}.deduplicated.bam
-rm ${base_name_2}.deduplicated.cleaned.bam
-rm -r ${ATAC_dir_output}/${base_name_2}/picard_temp
-
-#############
-### Rep 3 ###
-#############
-
-mkdir ${ATAC_dir_output}/${base_name_3}
-mkdir ${ATAC_dir_output}/${base_name_3}/picard_temp
-cd ${ATAC_dir_output}/${base_name_3}
-
-#### trimming ####
-
-source activate Trim_galore
-
-trim_galore --paired --cores 4 --nextera ${ATAC_dir_input}/${base_name_3}_R1.fastq.gz ${ATAC_dir_input}/${base_name_3}_R2.fastq.gz
-
-conda deactivate
-
-#### alignment ####
-
-source activate ATAC_pipeline_1
-
-bowtie2 --threads 8 --very-sensitive -X 1000 -k 10 -x ${ATAC_index_genome} \
--1 ${base_name_3}_R1_val_1.fq.gz -2 ${base_name_3}_R2_val_2.fq.gz \
-| samtools view -@ 8 -b -o ${base_name_3}.bam - #align ATAC-seq with bowtie
-
-conda deactivate
-
-#### deduplicate ####
-
-source activate picard
-
-java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD SortSam INPUT=${base_name_3}.bam OUTPUT=${base_name_3}.picardchrsorted.bam \
-SORT_ORDER=coordinate TMP_DIR=${ATAC_dir_output}/${base_name_3}/picard_temp VALIDATION_STRINGENCY=LENIENT
-
-java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD MarkDuplicates INPUT=${base_name_3}.picardchrsorted.bam OUTPUT=${base_name_3}.deduplicated.bam \
-TMP_DIR=${ATAC_dir_output}/${base_name_3}/picard_temp VALIDATION_STRINGENCY=LENIENT METRICS_FILE=${base_name_3}_PicardMarkDuplicates.txt REMOVE_DUPLICATES=true
-
-conda deactivate
-
-#### remove chrM and blacklist reads ####
-
-source activate ATAC_pipeline_1
-
-intersectBed -v -a ${base_name_3}.deduplicated.bam -b ${blacklisted_mitochondrial_regions} > \
-${base_name_3}.deduplicated.cleaned.bam
-
-samtools sort -o ${base_name_3}.deduplicated.cleaned.chrsorted.bam -T ${base_name_3}.deduplicated.cleaned.chrsorted -@ 16 \
-${base_name_3}.deduplicated.cleaned.bam
-
-samtools index ${base_name_3}.deduplicated.cleaned.chrsorted.bam
-
-conda deactivate
-
-#### cleanup unneeded files ####
-
-rm ${base_name_3}_R1_val_1.fq.gz
-rm ${base_name_3}_R2_val_2.fq.gz 
-rm ${base_name_3}.bam
-rm ${base_name_3}.deduplicated.bam
-rm ${base_name_3}.deduplicated.cleaned.bam
-rm -r ${ATAC_dir_output}/${base_name_3}/picard_temp
-
-
-#####################################################
-############## peak calling with MACS2 ##############
-#####################################################
-
-
-source activate ATAC_pipeline_2
-
-#####################
-####### Rep1 ########
-#####################
-
-cd ${ATAC_dir_output}/${base_name_1}
-
-macs2 callpeak -t ${base_name_1}.deduplicated.cleaned.chrsorted.bam -f BAMPE -n ${base_name_1} \
--g mm --keep-dup all -p 0.01 \
---outdir ${ATAC_dir_output}/${base_name_1}/ --nolambda --bdg --SPMR
-
-sort -k1,1 -k2,2n ${base_name_1}_peaks.narrowPeak > ${base_name_1}.sorted.narrowPeak
-
-#####################
-####### Rep2 ########
-#####################
-
-cd ${ATAC_dir_output}/${base_name_2}
-
-macs2 callpeak -t ${base_name_2}.deduplicated.cleaned.chrsorted.bam -f BAMPE -n ${base_name_2} \
--g mm --cutoff-analysis --keep-dup all -p 0.01 \
---outdir ${ATAC_dir_output}/${base_name_2}/ --nolambda --bdg --SPMR
-
-sort -k1,1 -k2,2n ${base_name_2}_peaks.narrowPeak > ${base_name_2}.sorted.narrowPeak
-
-#####################
-####### Rep3 ########
-#####################
-
-cd ${ATAC_dir_output}/${base_name_3}
-
-macs2 callpeak -t ${base_name_3}.deduplicated.cleaned.chrsorted.bam -f BAMPE -n ${base_name_3} \
--g mm --cutoff-analysis --keep-dup all -p 0.01 \
---outdir ${ATAC_dir_output}/${base_name_3}/ --nolambda --bdg --SPMR
-
-sort -k1,1 -k2,2n ${base_name_3}_peaks.narrowPeak > ${base_name_3}.sorted.narrowPeak
+	echo "########[`timestamp`] Finished for ${rep} output found in ${ATAC_dir_output}/${rep}########"
 
 
 #######################################################
