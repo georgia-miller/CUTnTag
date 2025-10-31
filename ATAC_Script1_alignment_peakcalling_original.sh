@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=Script1_H3K4me1
+#SBATCH --job-name=Script1_final_STM12023_WT_pBMDM
 #SBATCH --time=72:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -13,7 +13,7 @@
 ############ set basename and sample names ############
 #######################################################
 
-base_name=H3K4me1
+base_name=STM12023_WT_pBMDM
 
 # define an array of bio replicate names that can be looped over
 replicates=("${base_name}_Rep1" "${base_name}_Rep2" "${base_name}_Rep3")
@@ -42,17 +42,20 @@ tss=$HOME/genomes/mouse/Mus_musculus/UCSC/mm10/Annotation/Archives/archive-2015-
 timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
 
-#############################################################
-## align ATAC-Seq reads with bowtie & peak call with MACS2 ##
-#############################################################
+#######################################################
+####### per replicate: align reads & call peaks #######
+#######################################################
 
-source activate CUTnTag_processing_env
+conda activate CUTnTag_processing_env
 
 for rep in "${replicates[@]}"; do
-	mkdir -p ${ATAC_dir_output}/${rep}/picard_temp
-	cd ${ATAC_dir_output}/${rep}
 
-	echo "########[`timestamp`] Starting processing for CUT&Tag ${rep}########"
+	#### make a directory per rep and change into it ####
+	rep_dir=${ATAC_dir_output}/${rep}
+	mkdir -p ${rep_dir}/picard_temp
+	cd ${rep_dir}
+
+	echo "######## [`timestamp`] Starting processing for CUT&Tag ${rep} ########"
 
 	#### trimming ####
 
@@ -63,28 +66,28 @@ for rep in "${replicates[@]}"; do
 	#### alignment ####
 
 	bowtie2 --threads 8 --very-sensitive -X 1000 -k 10 -x ${ATAC_index_genome} \
-	-1 ${rep}_R1_val_1.fq.gz -2 ${rep}_R2_val_2.fq.gz \
-	| samtools view -@ 8 -b -o ${rep}.bam - #align ATAC seq with bowtie
+		-1 ${rep}_R1_val_1.fq.gz -2 ${rep}_R2_val_2.fq.gz \
+		| samtools view -@ 8 -b -o ${rep}.bam - #align ATAC seq with bowtie
 
 	echo "[`timestamp`] Finished alignment for ${rep}"
 
 	#### deduplicate ####
 
 	java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD SortSam INPUT=${rep}.bam OUTPUT=${rep}.picardchrsorted.bam \
-	SORT_ORDER=coordinate TMP_DIR=${ATAC_dir_output}/${rep}/picard_temp VALIDATION_STRINGENCY=LENIENT
+		SORT_ORDER=coordinate TMP_DIR=${rep_dir}/picard_temp VALIDATION_STRINGENCY=LENIENT
 
 	java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar $PICARD MarkDuplicates INPUT=${rep}.picardchrsorted.bam OUTPUT=${rep}.deduplicated.bam \
-	TMP_DIR=${ATAC_dir_output}/${rep}/picard_temp VALIDATION_STRINGENCY=LENIENT METRICS_FILE=${rep}_PicardMarkDuplicates.txt REMOVE_DUPLICATES=true
+		TMP_DIR=${rep_dir}/picard_temp VALIDATION_STRINGENCY=LENIENT METRICS_FILE=${rep}_PicardMarkDuplicates.txt REMOVE_DUPLICATES=true
 
 	echo "[`timestamp`] Finished marking duplicates for ${rep}"
 
 	#### remove chrM and blacklist reads ####
 
 	intersectBed -v -a ${rep}.deduplicated.bam -b ${blacklisted_mitochondrial_regions} > \
-	${rep}.deduplicated.cleaned.bam
+		${rep}.deduplicated.cleaned.bam
 
 	samtools sort -o ${rep}.deduplicated.cleaned.chrsorted.bam -T ${rep}.deduplicated.cleaned.chrsorted -@ 16 \
-	${rep}.deduplicated.cleaned.bam
+		${rep}.deduplicated.cleaned.bam
 
 	samtools index ${rep}.deduplicated.cleaned.chrsorted.bam #index sorted deduplicated bam
 
@@ -97,83 +100,89 @@ for rep in "${replicates[@]}"; do
 		${rep}.bam \
 		${rep}.deduplicated.bam \
 		${rep}.deduplicated.cleaned.bam
-	rm -r ${ATAC_dir_output}/${rep}/picard_temp
-
-	echo "[`timestamp`] Finished processing ${rep}"
+	rm -r ${rep_dir}/picard_temp
 
 	echo "[`timestamp`] Starting peak calling for ${rep}"
 	
 	macs2 callpeak -t ${rep}.deduplicated.cleaned.chrsorted.bam -f BAMPE -n ${rep} \
-	-g mm --keep-dup all -p 0.01 \
-	--outdir ${ATAC_dir_output}/${rep}/ --nolambda --bdg --SPMR
+		-g mm --cutoff-analysis --keep-dup all -p 0.01 \
+		--outdir ${rep_dir}/ --nolambda --bdg --SPMR
 
 	sort -k1,1 -k2,2n ${rep}_peaks.narrowPeak > ${rep}.sorted.narrowPeak
 
 	echo "[`timestamp`] Finished peak calling for ${rep}"
 
 
-	echo "########[`timestamp`] Finished for ${rep} output found in ${ATAC_dir_output}/${rep}########"
-
+	echo "######## [`timestamp`] Finished for ${rep} output found in ${rep_dir} ########"
+done
 
 #######################################################
 ############## merge ATAC-Seq replicates ##############
 #######################################################
 
+echo "######## [`timestamp`] Merge replicates and call consensus peaks ########"
 
-mkdir ${ATAC_dir_output}/${base_name}
+mkdir -p ${ATAC_dir_output}/${base_name}
 cd ${ATAC_dir_output}/${base_name}
 
-source activate ATAC_pipeline_1
-
+# here e.g. replicates[0] refers to 1st item of the replicates array = ${base_name}_Rep1
 samtools merge -@ 16 ${base_name}.merged.bam \
-${ATAC_dir_output}/${base_name_1}/${base_name_1}.deduplicated.cleaned.chrsorted.bam \
-${ATAC_dir_output}/${base_name_2}/${base_name_2}.deduplicated.cleaned.chrsorted.bam \
-${ATAC_dir_output}/${base_name_3}/${base_name_3}.deduplicated.cleaned.chrsorted.bam
+	${ATAC_dir_output}/${replicates[0]}/${replicates[0]}.deduplicated.cleaned.chrsorted.bam \
+	${ATAC_dir_output}/${replicates[1]}/${replicates[1]}.deduplicated.cleaned.chrsorted.bam \
+	${ATAC_dir_output}/${replicates[2]}/${replicates[2]}.deduplicated.cleaned.chrsorted.bam
 
 samtools sort -o ${base_name}.merged.chrsorted.bam -T ${base_name}.merged.chrsorted \
--@ 16 ${base_name}.merged.bam
+	-@ 16 ${base_name}.merged.bam
 
 samtools index ${base_name}.merged.chrsorted.bam 
 
 rm ${base_name}.merged.bam
 
-conda deactivate
+echo "[`timestamp`] Finished merging replicates for ${base_name}"
 
 ######################################################
 ###### call peaks on merged ATAC-Seq replicates ######
 ######################################################
 
-source activate ATAC_pipeline_2
-
 macs2 callpeak -t ${base_name}.merged.chrsorted.bam -f BAMPE -n ${base_name} \
--g mm --keep-dup all -p 0.01 \
---outdir ${ATAC_dir_output}/${base_name}/ --nolambda --bdg --SPMR
+	-g mm --keep-dup all -p 0.01 \
+	--outdir ${ATAC_dir_output}/${base_name}/ --nolambda --bdg --SPMR
 
 sort -k1,1 -k2,2n ${base_name}_peaks.narrowPeak > ${base_name}.sorted.narrowPeak
 
-conda deactivate
+echo "[`timestamp`] Finished calling peaks for ${base_name}"
 
 ######################################################
 ############ identify reproducible peaks #############
 ######################################################
 
-source activate bedtools
-
 bedtools intersect -wa -a ${base_name}.sorted.narrowPeak \
--b ${ATAC_dir_output}/${base_name_1}/${base_name_1}.sorted.narrowPeak > \
-${base_name}_merged.intersect_${base_name_1}.sorted.bed
+	-b ${ATAC_dir_output}/${replicates[0]}/${replicates[0]}.sorted.narrowPeak > \
+	${base_name}_merged.intersect_${replicates[0]}.sorted.bed
 
-bedtools intersect -wa -a ${base_name}_merged.intersect_${base_name_1}.sorted.bed \
--b ${ATAC_dir_output}/${base_name_2}/${base_name_2}.sorted.narrowPeak > \
-${base_name}_merged.intersect_${base_name_1}_${base_name_2}.sorted.bed
+bedtools intersect -wa -a ${base_name}_merged.intersect_${replicates[0]}.sorted.bed \
+	-b ${ATAC_dir_output}/${replicates[1]}/${replicates[1]}.sorted.narrowPeak > \
+	${base_name}_merged.intersect_${replicates[0]}_${replicates[1]}.sorted.bed
 
-bedtools intersect -wa -a ${base_name}_merged.intersect_${base_name_1}_${base_name_2}.sorted.bed \
--b ${ATAC_dir_output}/${base_name_3}/${base_name_3}.sorted.narrowPeak > \
-${base_name}.consensus_peaks.stringent.intermediary.bed
+bedtools intersect -wa -a ${base_name}_merged.intersect_${replicates[0]}_${replicates[1]}.sorted.bed \
+	-b ${ATAC_dir_output}/${replicates[2]}/${replicates[2]}.sorted.narrowPeak > \
+	${base_name}.consensus_peaks.stringent.intermediary.bed
 
 bedtools merge -i ${base_name}.consensus_peaks.stringent.intermediary.bed > \
-${base_name}.consensus_peaks.stringent.bed
+	${base_name}.consensus_peaks.stringent.bed
 
-rm ${base_name}_merged.intersect_${base_name_1}.sorted.bed
-rm ${base_name}_merged.intersect_${base_name_1}_${base_name_2}.sorted.bed
-rm ${base_name}.consensus_peaks.stringent.intermediary.bed
+rm 	${base_name}_merged.intersect_${replicates[0]}.sorted.bed \
+	${base_name}_merged.intersect_${replicates[0]}_${replicates[1]}.sorted.bed \
+	${base_name}.consensus_peaks.stringent.intermediary.bed
+
+
+
+echo "[`timestamp`] Finished identifying reproducible peaks for ${base_name}"
+
+
+conda deactivate
+
+
+echo "######## [`timestamp`] Script completed ########"
+
+
