@@ -33,11 +33,13 @@ for mod in "${modifications[@]}"; do
 				files2=( ${file_base}_S*_L002_${r}_001.fastq.gz )
 				file2=${files2[0]}
 				
-				# extract the sample number
-				sample=$(basename "$file1" | sed -E 's/.*(S[0-9]+).*/\1/')
+				# if want to extract the sample number (makes calling files later complicated)
+				#sample=$(basename "$file1" | sed -E 's/.*(S[0-9]+).*/\1/')
+				# define the new file name
+				#new_file=${dir_output}/${mod}_${cond}_${rep}_${sample}_${r}_merged.fastq.gz
 
 				# define the new file name
-				new_file=${dir_output}/${mod}_${cond}_${rep}_${sample}_${r}_merged.fastq.gz
+				new_file=${dir_output}/${mod}_${cond}_${rep}_${r}_merged.fastq.gz
 
 				cat "${file1}" "${file2}" > "${new_file}"
 

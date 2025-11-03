@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=Script1_H3K4me1
-#SBATCH --time=48:00:00
+#SBATCH --time=02:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -53,6 +53,11 @@ eval "$(conda shell.bash hook)"
 #######################################################
 ############ start to loop over conditions ############
 #######################################################
+conda activate CUTnTag_macs2_env
+echo -e "\n ######## [`timestamp`] Active environment: $(basename $CONDA_PREFIX) ######## \n"
+#conda list --name CUTnTag_alignment_env # list installed packages and versions
+macs2 --version
+macs2 callpeak -help
 
 # define an array of base names that can be looped over
 conditions=("${modification}_IL10" "${modification}_SteE")
@@ -71,9 +76,6 @@ for base_name in "${conditions[@]}"; do
 	#######################################################
 
 	
-	conda activate CUTnTag_macs2_env
-	echo -e "\n ######## [`timestamp`] Active environment: $(basename $CONDA_PREFIX) ######## \n"
-	#conda list --name CUTnTag_alignment_env # list installed packages and versions
 
 	for rep in "${replicates[@]}"; do
 
@@ -155,12 +157,12 @@ for base_name in "${conditions[@]}"; do
 
 	echo -e "\n [`timestamp`] Finished identifying reproducible peaks for ${base_name} \n"
 
-	conda deactivate
+	
 
 	echo -e "\n ######## [`timestamp`] ${base_name} completed ######## \n"
 done
 
-
+conda deactivate
 echo -e "\n ######## [`timestamp`] Script completed for ${modification} ######## \n"
 
 

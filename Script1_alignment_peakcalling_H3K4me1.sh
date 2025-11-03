@@ -139,7 +139,7 @@ for base_name in "${conditions[@]}"; do
 	############# per replicate: peak calling #############
 	#######################################################
 
-	conda activate CUTnTag_macs2_env
+	conda activate CUTnTag_macs2_env_2
 	echo -e "\n ######## [`timestamp`] Active environment: $(basename $CONDA_PREFIX) ######## \n"
 	#conda list --name CUTnTag_alignment_env # list installed packages and versions
 
