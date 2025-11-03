@@ -50,6 +50,9 @@ module load anaconda3/2022.10-gcc-13.2.0
 #source $(dirname $(which conda))/../etc/profile.d/conda.sh
 eval "$(conda shell.bash hook)"
 
+# set java options so the picard arguments run with these
+export JAVA_OPTS="-Xmx30g -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8"
+
 #######################################################
 ############ start to loop over conditions ############
 #######################################################
@@ -74,8 +77,6 @@ for base_name in "${conditions[@]}"; do
 	echo -e "\n ######## [`timestamp`] Active environment: $(basename $CONDA_PREFIX) ######## \n"
 	#conda list --name CUTnTag_alignment_env # list installed packages and versions
 
-	PICARD="${CONDA_PREFIX}/share/picard/picard.jar"
-
 	for rep in "${replicates[@]}"; do
 
 		#### make a directory per rep and change into it ####
@@ -83,7 +84,7 @@ for base_name in "${conditions[@]}"; do
 		mkdir -p ${rep_dir}/picard_temp
 		cd ${rep_dir}
 
-		echo -e "\n ######## [`timestamp`] Process and call peaks for CUT&Tag ${rep} ######## \n"
+		echo -e "\n ######## [`timestamp`] Starting processing for CUT&Tag ${rep} ######## \n"
 
 		#### trimming ####
 		trim_galore --paired --cores 4 --nextera ${dir_input}/${rep}*_R1_merged.fastq.gz ${dir_input}/${rep}*_R2_merged.fastq.gz
@@ -92,32 +93,54 @@ for base_name in "${conditions[@]}"; do
 
 		#### alignment ####
 
-		bowtie2 --threads 8 --very-sensitive -X 1000 -k 10 -x ${index_genome} \
-			-1 ${rep}_R1_merged_val_1.fq.gz -2 ${rep}_R2_merged_val_2.fq.gz \
+		bowtie2 --threads 8 --very-sensitive -X 1000 -k 10 \
+			-x ${index_genome} \
+			-1 ${rep}_R1_merged_val_1.fq.gz \
+			-2 ${rep}_R2_merged_val_2.fq.gz \
 			| samtools view -@ 8 -b -o ${rep}.bam - 
 
 		echo -e "\n [`timestamp`] Finished alignment for ${rep} \n"
 
 		#### mark duplicates ####
 
-		java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar ${PICARD} SortSam INPUT=${rep}.bam OUTPUT=${rep}.picardchrsorted.bam \
-			SORT_ORDER=coordinate TMP_DIR=${rep_dir}/picard_temp VALIDATION_STRINGENCY=LENIENT
+		# add dummy read groups so MarkDuplicate works
+		picard AddOrReplaceReadGroups \
+			-I ${rep}.bam \
+			-O ${rep}.bam \
+			--RGLB lib1 --RGPL ILLUMINA --RGPU unit1 --RGSM ${rep} \
+			--VALIDATION_STRINGENCY "LENIENT"
+
+		picard SortSam \
+			-I ${rep}.bam \
+			-O ${rep}.picardchrsorted.bam \
+			-SORT_ORDER coordinate \
+			--TMP_DIR ${rep_dir}/picard_temp \
+			--VALIDATION_STRINGENCY "LENIENT"
 
 		# remove duplicates is set to false so they are only marked
-		java -XX:ParallelGCThreads=8 -XX:ConcGCThreads=8 -Xmx30g -jar ${PICARD} MarkDuplicates INPUT=${rep}.picardchrsorted.bam OUTPUT=${rep}.marked.bam \
-			TMP_DIR=${rep_dir}/picard_temp VALIDATION_STRINGENCY=LENIENT METRICS_FILE=${rep}_PicardMarkDuplicates.txt REMOVE_DUPLICATES=false
+		picard MarkDuplicates \
+			-I ${rep}.picardchrsorted.bam \
+			-O ${rep}.marked.bam \
+			--TMP_DIR ${rep_dir}/picard_temp \
+			--VALIDATION_STRINGENCY "LENIENT" \
+			-METRICS_FILE ${rep}_PicardMarkDuplicates.txt \
+			--REMOVE_DUPLICATES false
 
 		echo -e "\n [`timestamp`] Finished marking duplicates for ${rep} found at ${rep}_PicardMarkDuplicates.txt \n"
 
 		#### remove chrM and blacklist reads ####
 
-		intersectBed -v -a ${rep}.marked.bam -b ${blacklisted_mitochondrial_regions} > \
+		intersectBed -v -a ${rep}.marked.bam \
+			-b ${blacklisted_mitochondrial_regions} > \
 			${rep}.marked.cleaned.bam
 
-		samtools sort -o ${rep}.marked.cleaned.chrsorted.bam -T ${rep}.marked.cleaned.chrsorted -@ 16 \
+		samtools sort -o ${rep}.marked.cleaned.chrsorted.bam \
+			-T ${rep}.marked.cleaned.chrsorted \
+			-@ 16 \
 			${rep}.marked.cleaned.bam
 
-		samtools index ${rep}.marked.cleaned.chrsorted.bam #index sorted marked bam
+		 # index the sorted duplication marked bam
+		samtools index ${rep}.marked.cleaned.chrsorted.bam
 
 		echo -e "\n [`timestamp`] Finished filtering for ${rep} \n"
 
@@ -151,8 +174,11 @@ for base_name in "${conditions[@]}"; do
 
 		echo -e "\n ######## [`timestamp`] Starting peak calling for ${rep} ######## \n"
 		
-		macs2 callpeak -t ${rep}.marked.cleaned.chrsorted.bam -f BAMPE -n ${rep} \
-			-g mm --keep-dup all --outdir ${rep_dir}/ --nolambda --bdg --SPMR \
+		macs2 callpeak -t ${rep}.marked.cleaned.chrsorted.bam \
+			-f BAMPE -n ${rep} \
+			-g mm --keep-dup all \
+			--outdir ${rep_dir}/ \
+			--nolambda --bdg --SPMR \
 			${macs2_args} # these will change depending on the modification/tag
 			# can add if needed: --cutoff-analysis
 
@@ -180,7 +206,8 @@ for base_name in "${conditions[@]}"; do
 		${dir_output}/${replicates[1]}/${replicates[1]}.marked.cleaned.chrsorted.bam \
 		${dir_output}/${replicates[2]}/${replicates[2]}.marked.cleaned.chrsorted.bam
 
-	samtools sort -o ${base_name}.merged.chrsorted.bam -T ${base_name}.merged.chrsorted \
+	samtools sort -o ${base_name}.merged.chrsorted.bam \
+		-T ${base_name}.merged.chrsorted \
 		-@ 16 ${base_name}.merged.bam
 
 	samtools index ${base_name}.merged.chrsorted.bam 
@@ -193,8 +220,11 @@ for base_name in "${conditions[@]}"; do
 	###### call peaks on merged CUT&Tag replicates ######
 	#####################################################
 
-	macs2 callpeak -t ${base_name}.merged.chrsorted.bam -f BAMPE -n ${base_name} \
-		-g mm --keep-dup all --outdir ${dir_output}/${base_name}/ --nolambda --bdg --SPMR \
+	macs2 callpeak -t ${base_name}.merged.chrsorted.bam \
+		-f BAMPE -n ${base_name} \
+		-g mm --keep-dup all \
+		--outdir ${dir_output}/${base_name}/ \
+		--nolambda --bdg --SPMR \
 		${macs2_args} # these will change depending on the modification/tag
 		# can add if needed: --cutoff-analysis
 

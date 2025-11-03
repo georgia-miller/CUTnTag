@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=Script1_H3K4me1
-#SBATCH --time=02:00:00
+#SBATCH --job-name=Script1.2_H3K4me1_WT_test
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script1.2_H3K4me1_%j.log
-#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script1.2_H3K4me1_%j.log
+#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script1.2_H3K4me1_WT_test_%j.log
+#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script1.2_H3K4me1_WT_test_%j.log
 
 
 #### MUST CHANGE: SCRIPT AND MODIFICATION NAME, CHECK DIRECTORIES & MACS2 ARGS ####
@@ -53,14 +53,9 @@ eval "$(conda shell.bash hook)"
 #######################################################
 ############ start to loop over conditions ############
 #######################################################
-conda activate CUTnTag_macs2_env
-echo -e "\n ######## [`timestamp`] Active environment: $(basename $CONDA_PREFIX) ######## \n"
-#conda list --name CUTnTag_alignment_env # list installed packages and versions
-macs2 --version
-macs2 callpeak -help
 
 # define an array of base names that can be looped over
-conditions=("${modification}_IL10" "${modification}_SteE")
+conditions=("${modification}_WT")
 
 
 for base_name in "${conditions[@]}"; do
@@ -68,14 +63,84 @@ for base_name in "${conditions[@]}"; do
 	echo -e "\n ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ [`timestamp`] Starting ${base_name} ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ \n"
 
 	# define an array of bio replicate names that can be looped over
-	replicates=("${base_name}_r1" "${base_name}_r2" "${base_name}_r3")
+	replicates=("${base_name}_r1" "${base_name}_r2")
 
 
 	#######################################################
 	############ per replicate: read alignment ############
 	#######################################################
 
-	
+	conda activate CUTnTag_alignment_env
+	echo -e "\n ######## [`timestamp`] Active environment: $(basename $CONDA_PREFIX) ######## \n"
+	#conda list --name CUTnTag_alignment_env # list installed packages and versions
+
+	for rep in "${replicates[@]}"; do
+
+		#### make a directory per rep and change into it ####
+		rep_dir=${dir_output}/${rep}
+		mkdir -p ${rep_dir}/picard_temp
+		cd ${rep_dir}
+
+		echo -e "\n ######## [`timestamp`] Starting processing for CUT&Tag ${rep} ######## \n"
+
+		#### trimming ####
+		trim_galore --paired --cores 4 --nextera ${dir_input}/${rep}*_R1_merged.fastq.gz ${dir_input}/${rep}*_R2_merged.fastq.gz
+
+		echo -e "\n [`timestamp`] Finished trimming for ${rep} \n"
+
+		#### alignment ####
+
+		bowtie2 --threads 8 --very-sensitive -X 1000 -k 10 -x ${index_genome} \
+			-1 ${rep}_R1_merged_val_1.fq.gz -2 ${rep}_R2_merged_val_2.fq.gz \
+			| samtools view -@ 8 -b -o ${rep}.bam - 
+
+		echo -e "\n [`timestamp`] Finished alignment for ${rep} \n"
+
+		#### mark duplicates ####
+
+		picard SortSam -I ${rep}.bam -O ${rep}.picardchrsorted.bam \
+			-SORT_ORDER coordinate --TMP_DIR ${rep_dir}/picard_temp --VALIDATION_STRINGENCY LENIENT
+
+		# remove duplicates is set to false so they are only marked
+		picard MarkDuplicates -I ${rep}.picardchrsorted.bam -O ${rep}.marked.bam \
+			--TMP_DIR ${rep_dir}/picard_temp --VALIDATION_STRINGENCY LENIENT \
+			-METRICS_FILE ${rep}_PicardMarkDuplicates.txt --REMOVE_DUPLICATES false
+
+		echo -e "\n [`timestamp`] Finished marking duplicates for ${rep} found at ${rep}_PicardMarkDuplicates.txt \n"
+
+		#### remove chrM and blacklist reads ####
+
+		intersectBed -v -a ${rep}.marked.bam -b ${blacklisted_mitochondrial_regions} > \
+			${rep}.marked.cleaned.bam
+
+		samtools sort -o ${rep}.marked.cleaned.chrsorted.bam -T ${rep}.marked.cleaned.chrsorted -@ 16 \
+			${rep}.marked.cleaned.bam
+
+		samtools index ${rep}.marked.cleaned.chrsorted.bam #index sorted marked bam
+
+		echo -e "\n [`timestamp`] Finished filtering for ${rep} \n"
+
+		#### cleanup unneeded files ####
+
+		rm  ${rep}_R1_val_1.fq.gz \
+			${rep}_R2_val_2.fq.gz \
+			${rep}.bam \
+			${rep}.marked.bam \
+			${rep}.marked.cleaned.bam
+		rm -r ${rep_dir}/picard_temp
+	done
+
+	conda deactivate
+
+	echo -e "\n ######## [`timestamp`] Finished all processing for ${base_name} ######## \n"
+
+	#######################################################
+	############# per replicate: peak calling #############
+	#######################################################
+
+	conda activate CUTnTag_macs2_env_2
+	echo -e "\n ######## [`timestamp`] Active environment: $(basename $CONDA_PREFIX) ######## \n"
+	#conda list --name CUTnTag_alignment_env # list installed packages and versions
 
 	for rep in "${replicates[@]}"; do
 
@@ -152,17 +217,17 @@ for base_name in "${conditions[@]}"; do
 	# filter to keep peaks present in at least 2 replicates
 	awk '$4>=2 {print $1"\t"$2"\t"$3"\t"$4}' ${base_name}.multiinter.bed > ${base_name}.consensus_peaks_raw.bed 
 
-	# merge any overlapping/bookmarkes peaks
+	# merge any overlapping/bookmarked peaks
 	bedtools merge -i ${base_name}.consensus_peaks_raw.bed > ${base_name}.consensus_peaks.bed 
 
 	echo -e "\n [`timestamp`] Finished identifying reproducible peaks for ${base_name} \n"
 
-	
+	conda deactivate
 
 	echo -e "\n ######## [`timestamp`] ${base_name} completed ######## \n"
 done
 
-conda deactivate
+
 echo -e "\n ######## [`timestamp`] Script completed for ${modification} ######## \n"
 
 
