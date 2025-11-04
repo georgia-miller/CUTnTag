@@ -27,19 +27,20 @@ conda activate CUTnTag_alignment_env
 # remove duplicates is set to false so they are only marked
 
 
-picard MarkDuplicates \
-			-I H3K4me1_WT_r1.picardchrsorted.rg.picard.bam \
-			-O H3K4me1_WT_r1.picardchrsorted.rg.picard.marked.bam \
-			--TMP_DIR ./picard_temp \
-			--VALIDATION_STRINGENCY "LENIENT" \
-			-METRICS_FILE H3K4me1_WT_r1_PicardMarkDuplicates.txt \
-			--REMOVE_DUPLICATES false \
-			-Xmx8g
+# picard MarkDuplicates \
+# 			-I H3K4me1_WT_r1.picardchrsorted.rg.picard.bam \
+# 			-O H3K4me1_WT_r1.picardchrsorted.rg.picard.marked.bam \
+# 			--TMP_DIR ./picard_temp \
+# 			--VALIDATION_STRINGENCY "LENIENT" \
+# 			-METRICS_FILE H3K4me1_WT_r1_PicardMarkDuplicates.txt \
+# 			--REMOVE_DUPLICATES false \
+# 			-Xmx8g
 
-echo -e "\n ######## [`timestamp`] Finished mark duplication for H3K4me1_WT_r1 ######## \n"
+# echo -e "\n ######## [`timestamp`] Finished mark duplication for H3K4me1_WT_r1 ######## \n"
 
-intersectBed -v -a H3K4me1_WT_r1.picardchrsorted.rg.picard.marked.bam \
-			/scratch/prj/id_hill_sims_wellcda/CUTnTag/mm10.blacklisted_and_chrM.sorted.bed > \
+intersectBed -v \
+			-a H3K4me1_WT_r1.picardchrsorted.rg.picard.marked.bam \
+			-b /scratch/prj/id_hill_sims_wellcda/CUTnTag/mm10.blacklisted_and_chrM.sorted.bed > \
 			H3K4me1_WT_r1.marked.cleaned.bam
 
 samtools sort -o H3K4me1_WT_r1.marked.cleaned.chrsorted.bam \
@@ -64,7 +65,7 @@ macs2 callpeak -t H3K4me1_WT_r1.marked.cleaned.chrsorted.bam \
 
 sort -k1,1 -k2,2n H3K4me1_WT_r1_peaks.broadPeak > H3K4me1_WT_r1.sorted.broadPeak
 
-echo -e "\n [`timestamp`] Finished peak calling for H3K4me1_WT_r1 \n"
+echo -e "######## \n [`timestamp`] Finished peak calling for H3K4me1_WT_r1 \n ########"
 
 conda deactivate
 

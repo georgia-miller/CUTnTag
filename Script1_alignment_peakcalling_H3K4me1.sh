@@ -130,7 +130,8 @@ for base_name in "${conditions[@]}"; do
 
 		#### remove chrM and blacklist reads ####
 
-		intersectBed -v -a ${rep}.marked.bam \
+		intersectBed -v \
+			-a ${rep}.marked.bam \
 			-b ${blacklisted_mitochondrial_regions} > \
 			${rep}.marked.cleaned.bam
 
