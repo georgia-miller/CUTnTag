@@ -8,7 +8,8 @@
 #SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script0_merge_fastqs_%j.log
 #SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script0_merge_fastqs_%j.log
 
-echo "Script0 to merge fastqs for every CUT&Tag sample"
+
+echo -e "\n######## Script 0 to merge fastqs for every CUT&Tag sample ######## \n"
 
 dir_input=/scratch/prj/id_hill_sims_wellcda/CUTnTag/fastqs
 dir_output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/merged_fastqs

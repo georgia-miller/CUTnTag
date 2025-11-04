@@ -48,11 +48,6 @@ module load anaconda3/2022.10-gcc-13.2.0
 #source $(dirname $(which conda))/../etc/profile.d/conda.sh
 eval "$(conda shell.bash hook)"
 
-# activate the alignment conda environment
-conda activate CUTnTag_macs2_env_2
-echo -e "\n ######## [${timestamp}] Active environment: $(basename $CONDA_PREFIX) ######## \n"
-#conda list --name CUTnTag_macs2_env_2 # list installed packages and versions
-
 # set an error trap
 set -o errexit # stop if encounter an error
 set -o pipefail # stop on pipeline errors (if any command within a piped command fails)
@@ -72,12 +67,14 @@ for base_name in "${conditions[@]}"; do
 
 	# define an array of bio replicate names that can be looped over
 	replicates=("${base_name}_r1" "${base_name}_r2" "${base_name}_r3")
-
-
 	
 	#######################################################
 	############# per replicate: peak calling #############
 	#######################################################
+
+	# activate the macs2 conda environment
+	conda activate CUTnTag_macs2_env
+	echo -e "\n #### [${timestamp}] Active environment: $(basename $CONDA_PREFIX) #### \n"
 
 	for rep in "${replicates[@]}"; do
 
@@ -103,10 +100,15 @@ for base_name in "${conditions[@]}"; do
 		echo -e "\n [${timestamp}] Finished for ${rep} output found in ${rep_dir} \n"
 	done
 
+	conda deactivate
 
 	######################################################
 	############## merge CUT&Tag replicates ##############
 	######################################################
+
+	# activate the samtools/bedtools conda environment
+	conda activate CUTnTag_tools_env
+	echo -e "\n #### [${timestamp}] Active environment: $(basename $CONDA_PREFIX) #### \n"
 
 	echo -e "\n ######## [${timestamp}] Merge replicates and call consensus peaks ######## \n"
 
@@ -129,9 +131,15 @@ for base_name in "${conditions[@]}"; do
 
 	echo -e "\n [${timestamp}] Finished merging replicates for ${base_name} \n"
 
+	conda deactivate
+
 	#####################################################
 	###### call peaks on merged CUT&Tag replicates ######
 	#####################################################
+
+	# activate the macs2 conda environment
+	conda activate CUTnTag_macs2_env
+	echo -e "\n #### [${timestamp}] Active environment: $(basename $CONDA_PREFIX) #### \n"
 
 	macs2 callpeak -t ${base_name}.merged.chrsorted.bam \
 		-f BAMPE -n ${base_name} \
@@ -145,10 +153,15 @@ for base_name in "${conditions[@]}"; do
 
 	echo -e "\n [${timestamp}] Finished calling peaks for ${base_name} \n"
 
+	conda deactivate
+
 	######################################################
 	############ identify reproducible peaks #############
 	######################################################
 
+	# activate the samtools/bedtools conda environment
+	conda activate CUTnTag_tools_env
+	echo -e "\n #### [${timestamp}] Active environment: $(basename $CONDA_PREFIX) #### \n"
 
 	# create list of all replicate peak files
 	peak_files=("${dir_output}/${replicates[0]}/${replicates[0]}.sorted.${peak_type}" \
@@ -168,9 +181,10 @@ for base_name in "${conditions[@]}"; do
 
 
 	echo -e "\n ######## [${timestamp}] ${base_name} completed ######## \n"
+
+	conda deactivate
 done
 
-conda deactivate
 
 echo -e "\n ######## [${timestamp}] Script completed for ${modification} ######## \n"
 

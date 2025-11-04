@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=Script1_H3K4me1
+#SBATCH --job-name=Script1_H3K27ac
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script1_H3K4me1_%j.log
-#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script1_H3K4me1_%j.log
+#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script1_H3K27ac_%j.log
+#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script1_H3K27ac_%j.log
 
 
 #### MUST CHANGE: SCRIPT AND MODIFICATION NAME & CHECK DIRECTORIES ####
@@ -15,7 +15,7 @@
 ################ set names & parameters ###############
 #######################################################
 
-modification=H3K4me1
+modification=H3K27ac
 
 echo -e "\n######## Script 1 to do alignments for each replicate for ${modification} ######## \n"
 
