@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=Script2_H3K4me1
+#SBATCH --job-name=Script2_test_H3K4me1
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_H3K4me1_IL10test%j.log
-#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_H3K4me1_IL10test%j.log
+#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_test_H3K4me1_WT_%j.log
+#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_test_H3K4me1_WT_%j.log
 
 
 #### MUST CHANGE: SCRIPT AND MODIFICATION NAME, CHECK DIRECTORIES & MACS2 ARGS ####
@@ -34,8 +34,7 @@ else
 fi
 
 
-dir_input=/scratch/prj/id_hill_sims_wellcda/CUTnTag/merged_fastqs
-dir_output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/alignment_peakcalling/${modification}_attempt/
+dir_output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/alignment_peakcalling/old_${modification}/
 mm10_genome=/scratch/prj/id_hill_sims_wellcda/CUTnTag/mm10.genome.size
 
 # define timestamp to use for logging messages
@@ -49,7 +48,7 @@ module load anaconda3/2022.10-gcc-13.2.0
 eval "$(conda shell.bash hook)"
 
 # activate the SEACR conda environment
-conda activate CUTnTag_peakcalling_env
+conda activate CUTnTag_seacr_env
 echo -e "\n #### [$(timestamp)] Active environment: $(basename $CONDA_PREFIX) #### \n"
 
 # print versions of key tools
@@ -67,7 +66,7 @@ trap 'echo -e "\n [$(timestamp)] Error in ${BASH_COMMAND}. Exiting. \n" >&2; exi
 #######################################################
 
 # define an array of base names that can be looped over
-conditions=("${modification}_IL10")
+conditions=("${modification}_WT")
 
 
 for base_name in "${conditions[@]}"; do

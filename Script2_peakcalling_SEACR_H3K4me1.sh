@@ -34,8 +34,7 @@ else
 fi
 
 
-dir_input=/scratch/prj/id_hill_sims_wellcda/CUTnTag/merged_fastqs
-dir_output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/alignment_peakcalling/${modification}/
+dir_output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/alignment_peakcalling/${modification}
 mm10_genome=/scratch/prj/id_hill_sims_wellcda/CUTnTag/mm10.genome.size
 
 # define timestamp to use for logging messages
@@ -49,7 +48,7 @@ module load anaconda3/2022.10-gcc-13.2.0
 eval "$(conda shell.bash hook)"
 
 # activate the SEACR conda environment
-conda activate CUTnTag_peakcalling_env
+conda activate CUTnTag_seacr_env
 echo -e "\n #### [$(timestamp)] Active environment: $(basename $CONDA_PREFIX) #### \n"
 
 # print versions of key tools
