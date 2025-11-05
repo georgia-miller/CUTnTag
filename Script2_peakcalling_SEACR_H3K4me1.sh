@@ -88,8 +88,17 @@ for base_name in "${conditions[@]}"; do
 
 		echo -e "\n ######## [$(timestamp)] Starting peak calling for ${rep} ######## \n"
 		
+		# sort be read name so both mates of a paired-end read are next to each other which is needed for bamtobed
+		samtools sort -n -o ${rep}.marked.cleaned.qnsorted.bam \
+		-T ${rep}.marked.cleaned.qnsorted \
+		-@ 16 \
+		${rep}.marked.cleaned.chrsorted.bam
+
+		# remove orphaned reads
+		samtools fixmate -m ${rep}.marked.cleaned.qnsorted.bam ${rep}.marked.cleaned.qnsorted.fixed.bam
+
 		# for SEACR must convert paired-end BAM files to BED file
-		bedtools bamtobed -bedpe -i ${rep}.marked.cleaned.chrsorted.bam > ${rep}.bed
+		bedtools bamtobed -bedpe -i ${rep}.marked.cleaned.qnsorted.fixed.bam > ${rep}.bed
 
 		# remove spurious or discordant alignments (following vignette)
 		awk '$1==$4 && $6-$2 < 1000 {print $0}' ${rep}.bed > ${rep}.clean.bed
@@ -147,8 +156,17 @@ for base_name in "${conditions[@]}"; do
 	###### call peaks on merged CUT&Tag replicates ######
 	#####################################################
 
+	# sort be read name so both mates of a paired-end read are next to each other which is needed for bamtobed
+	samtools sort -n -o ${base_name}.merged.qnsorted.bam \
+	-T ${base_name}.merged.qnsorted \
+	-@ 16 \
+	${base_name}.merged.chrsorted.bam
+
+	# remove orphaned reads
+	samtools fixmate -m ${base_name}.merged.qnsorted.bam ${base_name}.merged.qnsorted.fixed.bam
+
 	# for SEACR must convert paired-end BAM files to BED file
-	bedtools bamtobed -bedpe -i ${base_name}.merged.chrsorted.bam  > ${base_name}.bed
+	bedtools bamtobed -bedpe -i ${base_name}.merged.qnsorted.fixed.bam  > ${base_name}.bed
 
 	# remove spurious or discordant alignments (following vignette)
 	awk '$1==$4 && $6-$2 < 1000 {print $0}' ${base_name}.bed > ${base_name}.clean.bed
@@ -187,7 +205,7 @@ for base_name in "${conditions[@]}"; do
 	# filter to keep peaks present in at least 2 replicates
 	awk '$4>=2 {print $1"\t"$2"\t"$3"\t"$4}' ${base_name}.multiinter.bed > ${base_name}.consensus_peaks_raw.bed 
 
-	# merge any overlapping/bookmarkes peaks
+	# merge any overlapping/bookmarked peaks
 	bedtools merge -i ${base_name}.consensus_peaks_raw.bed > ${base_name}.consensus_peaks.bed 
 
 	echo -e "\n [$(timestamp)] Finished identifying reproducible peaks (peaks in => 2/3 replicates) for ${base_name} \n"

@@ -88,8 +88,22 @@ for base_name in "${conditions[@]}"; do
 
 		echo -e "\n ######## [$(timestamp)] Starting peak calling for ${rep} ######## \n"
 		
+		# sort be read name so both mates of a paired-end read are next to each other which is needed for bamtobed
+		samtools sort -n -o ${rep}.marked.cleaned.qnsorted.bam \
+		-T ${rep}.marked.cleaned.qnsorted \
+		-@ 16 \
+		${rep}.marked.cleaned.chrsorted.bam
+
+		# fix orphaned pairs
+		samtools view -b -f 1 -F 0xC ${rep}.marked.cleaned.qnsorted.bam > ${rep}.marked.cleaned.qnsorted.fixed.bam
+
+		samtools sort -n -o ${rep}.marked.cleaned.qnsorted.fixed.sorted.bam \
+		-T ${rep}.marked.cleaned.qnsorted.fixed.sorted \
+		-@ 16 \
+		${rep}.marked.cleaned.qnsorted.fixed.bam
+
 		# for SEACR must convert paired-end BAM files to BED file
-		bedtools bamtobed -bedpe -i ${rep}.marked.cleaned.chrsorted.bam > ${rep}.bed
+		bedtools bamtobed -bedpe -i ${rep}.marked.cleaned.qnsorted.fixed.sorted.bam > ${rep}.bed
 
 		# remove spurious or discordant alignments (following vignette)
 		awk '$1==$4 && $6-$2 < 1000 {print $0}' ${rep}.bed > ${rep}.clean.bed
@@ -129,8 +143,8 @@ for base_name in "${conditions[@]}"; do
 	# here e.g. replicates[0] refers to 1st item of the replicates array = ${base_name}_r1
 	samtools merge -@ 16 ${base_name}.merged.bam \
 		${dir_output}/${replicates[0]}/${replicates[0]}.marked.cleaned.chrsorted.bam \
-		${dir_output}/${replicates[1]}/${replicates[1]}.marked.cleaned.chrsorted.bam \
-		${dir_output}/${replicates[2]}/${replicates[2]}.marked.cleaned.chrsorted.bam
+		${dir_output}/${replicates[1]}/${replicates[1]}.marked.cleaned.chrsorted.bam 
+		#${dir_output}/${replicates[2]}/${replicates[2]}.marked.cleaned.chrsorted.bam
 
 	samtools sort -o ${base_name}.merged.chrsorted.bam \
 		-T ${base_name}.merged.chrsorted \
@@ -147,8 +161,14 @@ for base_name in "${conditions[@]}"; do
 	###### call peaks on merged CUT&Tag replicates ######
 	#####################################################
 
+	# sort be read name so both mates of a paired-end read are next to each other which is needed for bamtobed
+	samtools sort -n -o ${base_name}.merged.qnsorted.bam \
+	-T ${base_name}.merged.qnsorted \
+	-@ 16 \
+	${base_name}.merged.chrsorted.bam
+
 	# for SEACR must convert paired-end BAM files to BED file
-	bedtools bamtobed -bedpe -i ${base_name}.merged.chrsorted.bam  > ${base_name}.bed
+	bedtools bamtobed -bedpe -i ${base_name}.merged.qnsorted.bam  > ${base_name}.bed
 
 	# remove spurious or discordant alignments (following vignette)
 	awk '$1==$4 && $6-$2 < 1000 {print $0}' ${base_name}.bed > ${base_name}.clean.bed
@@ -178,8 +198,8 @@ for base_name in "${conditions[@]}"; do
 
 	# create list of all replicate peak files
 	peak_files=("${dir_output}/${replicates[0]}/${replicates[0]}_SEACR.stringent.sorted.bed" \
-				"${dir_output}/${replicates[1]}/${replicates[1]}_SEACR.stringent.sorted.bed" \
-				"${dir_output}/${replicates[2]}/${replicates[2]}_SEACR.stringent.sorted.bed")
+				"${dir_output}/${replicates[1]}/${replicates[1]}_SEACR.stringent.sorted.bed") 
+				#"${dir_output}/${replicates[2]}/${replicates[2]}_SEACR.stringent.sorted.bed")
 
 	# count peaks between replicates to find overlapping ones
 	bedtools multiinter -i ${peak_files[@]} > ${base_name}.multiinter.bed
