@@ -88,41 +88,26 @@ for base_name in "${conditions[@]}"; do
 
 		echo -e "\n ######## [$(timestamp)] Starting peak calling for ${rep} ######## \n"
 		
-		# sort be read name so both mates of a paired-end read are next to each other which is needed for bamtobed
-		samtools sort -n -o ${rep}.marked.cleaned.qnsorted.bam \
-		-T ${rep}.marked.cleaned.qnsorted \
-		-@ 16 \
-		${rep}.marked.cleaned.chrsorted.bam
-
-		# remove orphaned reads
-		samtools fixmate -m ${rep}.marked.cleaned.qnsorted.bam ${rep}.marked.cleaned.qnsorted.fixed.bam
-
 		# for SEACR must convert paired-end BAM files to BED file
-		bedtools bamtobed -bedpe -i ${rep}.marked.cleaned.qnsorted.fixed.bam > ${rep}.bed
+		bedtools bamtobed -i ${rep}.marked.cleaned.chrsorted.bam > ${rep}.bed
 
-		# remove spurious or discordant alignments (following vignette)
-		awk '$1==$4 && $6-$2 < 1000 {print $0}' ${rep}.bed > ${rep}.clean.bed
-
-		# extract chr, start and end
-		cut -f 1,2,6 ${rep}.clean.bed | sort -k1,1 -k2,2n -k3,3n > ${rep}.fragments.bed
+		# extract chr, start and end, sort by coordinates
+		cut -f 1,2,3 ${rep}.bed | sort -k1,1 -k2,2n -k3,3n > ${rep}.fragments.bed
 
 		# create fragment coverage bedgraph
 		bedtools genomecov -bg -i ${rep}.fragments.bed -g ${mm10_genome} > ${rep}.fragments.bedgraph
 
 		# call SEACR
-		bash SEACR_1.3.sh ${rep}.fragments.bedgraph ${AUC} non stringent ${rep}_SEACR
+		bash ${CONDA_PREFIX}/bin/SEACR_1.3.sh ${rep}.fragments.bedgraph ${AUC} non stringent ${rep}_SEACR
 
 
 		sort -k1,1 -k2,2n ${rep}_SEACR.stringent.bed > ${rep}_SEACR.stringent.sorted.bed
 
 		echo -e "\n [$(timestamp)] Finished peak calling for ${rep} \n"
 
-
-		echo -e "\n [$(timestamp)] Finished for ${rep} output found in ${rep_dir} \n"
-
-		#rm  ${rep}.bed \
-		#	${rep}.clean.bed \
-		#	${rep}.fragments.bed
+		rm  ${rep}.bed \
+			${rep}.fragments.bed \
+			${rep}_SEACR.stringent.bed
 	done
 
 
@@ -156,38 +141,25 @@ for base_name in "${conditions[@]}"; do
 	###### call peaks on merged CUT&Tag replicates ######
 	#####################################################
 
-	# sort be read name so both mates of a paired-end read are next to each other which is needed for bamtobed
-	samtools sort -n -o ${base_name}.merged.qnsorted.bam \
-	-T ${base_name}.merged.qnsorted \
-	-@ 16 \
-	${base_name}.merged.chrsorted.bam
-
-	# remove orphaned reads
-	samtools fixmate -m ${base_name}.merged.qnsorted.bam ${base_name}.merged.qnsorted.fixed.bam
-
 	# for SEACR must convert paired-end BAM files to BED file
-	bedtools bamtobed -bedpe -i ${base_name}.merged.qnsorted.fixed.bam  > ${base_name}.bed
+	bedtools bamtobed -i ${base_name}.merged.chrsorted.bam > ${base_name}.bed
 
-	# remove spurious or discordant alignments (following vignette)
-	awk '$1==$4 && $6-$2 < 1000 {print $0}' ${base_name}.bed > ${base_name}.clean.bed
-
-	# extract chr, start and end
-	cut -f 1,2,6 ${base_name}.clean.bed | sort -k1,1 -k2,2n -k3,3n > ${base_name}.fragments.bed
+	# extract chr, start and end, sort by coordinates
+	cut -f 1,2,3 ${base_name}.bed | sort -k1,1 -k2,2n -k3,3n > ${base_name}.fragments.bed
 
 	# create fragment coverage bedgraph
 	bedtools genomecov -bg -i ${base_name}.fragments.bed -g ${mm10_genome} > ${base_name}.fragments.bedgraph
 
 	# call SEACR
-	bash SEACR_1.3.sh ${base_name}.fragments.bedgraph ${AUC} non stringent ${base_name}_SEACR_merged
-
+	bash ${CONDA_PREFIX}/bin/SEACR_1.3.sh ${rep}.fragments.bedgraph ${AUC} non stringent ${base_name}_SEACR
 
 	sort -k1,1 -k2,2n ${base_name}_SEACR_merged.stringent.bed > ${base_name}_SEACR_merged.stringent.sorted.bed
 
 	echo -e "\n [$(timestamp)] Finished calling peaks for merged ${base_name} \n"
 
-	#rm ${base_name}.bed \
-	#	${base_name}.clean.bed \
-	#	${base_name}.fragments.bed
+	rm  ${base_name}.bed \
+		${base_name}.fragments.bed \
+		${base_name}_SEACR_merged.stringent.bed
 
 
 	######################################################

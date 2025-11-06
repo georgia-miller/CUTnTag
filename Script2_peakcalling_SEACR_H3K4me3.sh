@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=Script2_test_H3K4me1
+#SBATCH --job-name=Script2_H3K4me3
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_test_H3K4me1_WT_%j.log
-#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_test_H3K4me1_WT_%j.log
+#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_H3K4me3_%j.log
+#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_H3K4me3_%j.log
 
 
 #### MUST CHANGE: SCRIPT AND MODIFICATION NAME, CHECK DIRECTORIES & MACS2 ARGS ####
@@ -16,7 +16,7 @@
 ################ set names & parameters ###############
 #######################################################
 
-modification=H3K4me1
+modification=H3K4me3
 
 echo -e "\n######## Script 2 to call peaks for each replicate and merged samples for ${modification} ######## \n"
 
@@ -34,7 +34,7 @@ else
 fi
 
 
-dir_output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/alignment_peakcalling/old_${modification}/
+dir_output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/alignment_peakcalling/${modification}
 mm10_genome=/scratch/prj/id_hill_sims_wellcda/CUTnTag/mm10.genome.size
 
 # define timestamp to use for logging messages
@@ -66,7 +66,7 @@ trap 'echo -e "\n [$(timestamp)] Error in ${BASH_COMMAND}. Exiting. \n" >&2; exi
 #######################################################
 
 # define an array of base names that can be looped over
-conditions=("${modification}_WT")
+conditions=("${modification}_IL10" "${modification}_SteE" "${modification}_UI" "${modification}_WT")
 
 
 for base_name in "${conditions[@]}"; do
@@ -74,7 +74,7 @@ for base_name in "${conditions[@]}"; do
 	echo -e "\n ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ [$(timestamp)] Starting ${base_name} ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ \n"
 
 	# define an array of bio replicate names that can be looped over
-	replicates=("${base_name}_r1" "${base_name}_r2")
+	replicates=("${base_name}_r1" "${base_name}_r2" "${base_name}_r3")
 	
 	#######################################################
 	############# per replicate: peak calling #############
@@ -100,15 +100,14 @@ for base_name in "${conditions[@]}"; do
 		# call SEACR
 		bash ${CONDA_PREFIX}/bin/SEACR_1.3.sh ${rep}.fragments.bedgraph ${AUC} non stringent ${rep}_SEACR
 
+
 		sort -k1,1 -k2,2n ${rep}_SEACR.stringent.bed > ${rep}_SEACR.stringent.sorted.bed
 
 		echo -e "\n [$(timestamp)] Finished peak calling for ${rep} \n"
 
-
-		echo -e "\n [$(timestamp)] Finished for ${rep} output found in ${rep_dir} \n"
-
-		#rm  ${rep}.bed \
-		#	${rep}.fragments.bed
+		rm  ${rep}.bed \
+			${rep}.fragments.bed \
+			${rep}_SEACR.stringent.bed
 	done
 
 
@@ -124,8 +123,8 @@ for base_name in "${conditions[@]}"; do
 	# here e.g. replicates[0] refers to 1st item of the replicates array = ${base_name}_r1
 	samtools merge -@ 16 ${base_name}.merged.bam \
 		${dir_output}/${replicates[0]}/${replicates[0]}.marked.cleaned.chrsorted.bam \
-		${dir_output}/${replicates[1]}/${replicates[1]}.marked.cleaned.chrsorted.bam 
-		#${dir_output}/${replicates[2]}/${replicates[2]}.marked.cleaned.chrsorted.bam
+		${dir_output}/${replicates[1]}/${replicates[1]}.marked.cleaned.chrsorted.bam \
+		${dir_output}/${replicates[2]}/${replicates[2]}.marked.cleaned.chrsorted.bam
 
 	samtools sort -o ${base_name}.merged.chrsorted.bam \
 		-T ${base_name}.merged.chrsorted \
@@ -152,14 +151,15 @@ for base_name in "${conditions[@]}"; do
 	bedtools genomecov -bg -i ${base_name}.fragments.bed -g ${mm10_genome} > ${base_name}.fragments.bedgraph
 
 	# call SEACR
-	bash ${CONDA_PREFIX}/bin/SEACR_1.3.sh ${base_name}.fragments.bedgraph ${AUC} non stringent ${base_name}_SEACR_merged
+	bash ${CONDA_PREFIX}/bin/SEACR_1.3.sh ${rep}.fragments.bedgraph ${AUC} non stringent ${base_name}_SEACR
 
 	sort -k1,1 -k2,2n ${base_name}_SEACR_merged.stringent.bed > ${base_name}_SEACR_merged.stringent.sorted.bed
 
 	echo -e "\n [$(timestamp)] Finished calling peaks for merged ${base_name} \n"
 
-	#rm ${base_name}.bed \
-	#	${base_name}.fragments.bed
+	rm  ${base_name}.bed \
+		${base_name}.fragments.bed \
+		${base_name}_SEACR_merged.stringent.bed
 
 
 	######################################################
@@ -168,8 +168,8 @@ for base_name in "${conditions[@]}"; do
 
 	# create list of all replicate peak files
 	peak_files=("${dir_output}/${replicates[0]}/${replicates[0]}_SEACR.stringent.sorted.bed" \
-				"${dir_output}/${replicates[1]}/${replicates[1]}_SEACR.stringent.sorted.bed") 
-				#"${dir_output}/${replicates[2]}/${replicates[2]}_SEACR.stringent.sorted.bed")
+				"${dir_output}/${replicates[1]}/${replicates[1]}_SEACR.stringent.sorted.bed" \
+				"${dir_output}/${replicates[2]}/${replicates[2]}_SEACR.stringent.sorted.bed")
 
 	# count peaks between replicates to find overlapping ones
 	bedtools multiinter -i ${peak_files[@]} > ${base_name}.multiinter.bed
