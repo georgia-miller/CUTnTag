@@ -143,6 +143,8 @@ for base_name in "${conditions[@]}"; do
 		rm  ${rep}_R1_merged_val_1.fq.gz \
 			${rep}_R2_merged_val_2.fq.gz \
 			${rep}.bam \
+			${rep}.RG.bam \
+			${rep}.picardchrsorted.bam \
 			${rep}.marked.bam \
 			${rep}.marked.cleaned.bam
 		rm -r ${rep_dir}/picard_temp

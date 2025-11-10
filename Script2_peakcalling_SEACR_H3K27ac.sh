@@ -4,13 +4,12 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
+#SBATCH --mem=100G
 #SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_H3K27ac_%j.log
 #SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2_H3K27ac_%j.log
 
 
 #### MUST CHANGE: SCRIPT AND MODIFICATION NAME, CHECK DIRECTORIES & MACS2 ARGS ####
-
 
 #######################################################
 ################ set names & parameters ###############
@@ -157,7 +156,8 @@ for base_name in "${conditions[@]}"; do
 
 	echo -e "\n [$(timestamp)] Finished calling peaks for merged ${base_name} \n"
 
-	rm  ${base_name}.bed \
+	rm  ${base_name}.merged.bam \
+		${base_name}.bed \
 		${base_name}.fragments.bed \
 		${base_name}_SEACR_merged.stringent.bed
 
@@ -184,6 +184,8 @@ for base_name in "${conditions[@]}"; do
 
 
 	echo -e "\n ######## [$(timestamp)] ${base_name} completed ######## \n"
+
+	rm  ${base_name}.consensus_peaks_raw.bed 
 
 done
 
