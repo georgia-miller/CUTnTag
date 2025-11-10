@@ -151,7 +151,7 @@ for base_name in "${conditions[@]}"; do
 	bedtools genomecov -bg -i ${base_name}.fragments.bed -g ${mm10_genome} > ${base_name}.fragments.bedgraph
 
 	# call SEACR
-	bash ${CONDA_PREFIX}/bin/SEACR_1.3.sh ${rep}.fragments.bedgraph ${AUC} non stringent ${base_name}_SEACR
+	bash ${CONDA_PREFIX}/bin/SEACR_1.3.sh ${base_name}.fragments.bedgraph ${AUC} non stringent ${base_name}_SEACR_merged
 
 	sort -k1,1 -k2,2n ${base_name}_SEACR_merged.stringent.bed > ${base_name}_SEACR_merged.stringent.sorted.bed
 
