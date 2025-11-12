@@ -52,10 +52,10 @@ bedtools multiinter -i ${ATAC_peaks} ${H3K4me1_WT} ${H3K4me3_WT} \
 
 # promoters have H3K4me3, filter for those that have ATAC=1 and H3K4me3=1
 # this line: keep header, filter to rows where cols 6 and 7 = 1 and output it
-awk 'NR==1 || ($6==1 && $7==1)' SteE_vs_WT_peaks_with_mods.bed > SteE_vs_WT_peaks_promoters.bed
+awk 'NR==1 || ($6==1 && $8==1)' SteE_vs_WT_peaks_with_mods.bed > SteE_vs_WT_peaks_promoters.bed
 
 # enhancers have H3K4me1 peaks but not H3K4me3, filter for those that have ATAC=1 and H3K4me1=1, H3K4me3=0
-awk 'NR==1 || ($6==1 && $7==0 && $8==1)' SteE_vs_WT_peaks_with_mods.bed > SteE_vs_WT_peaks_enhancers.bed
+awk 'NR==1 || ($6==1 && $7==1 && $8==0)' SteE_vs_WT_peaks_with_mods.bed > SteE_vs_WT_peaks_enhancers.bed
 
 
 conda deactivate
