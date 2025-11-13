@@ -3,7 +3,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2.1_bigwig_%j.log
 #SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2.1_bigwig_%j.log
@@ -50,62 +50,76 @@ for mod in "${modifications[@]}"; do
 
 echo -e "\n ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ [$(timestamp)] Starting ${mod} ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ \n"
 
-	cd ${dir}/${mod}/
-
 	# define an array of base names that can be looped over
 	conditions=("${mod}_IL10" "${mod}_SteE" "${mod}_UI" "${mod}_WT")
 
 	for base_name in "${conditions[@]}"; do
+
+		cd ${dir}/${mod}/
 
 		echo -e "\n ######## Starting ${base_name} ######## \n"
 
 		# define an array of bio replicate names that can be looped over
 		replicates=("${base_name}_r1" "${base_name}_r2" "${base_name}_r3")
 
-		rep1=${dir}/${mod}/${replicates[0]}
-		rep2=${dir}/${mod}/${replicates[1]}
-		rep3=${dir}/${mod}/${replicates[2]}
+		rep1_dir=${dir}/${mod}/${replicates[0]}
+		rep2_dir=${dir}/${mod}/${replicates[1]}
+		rep3_dir=${dir}/${mod}/${replicates[2]}
 
 		# count usable reads in each replicate
-		count1=$(samtools view -c -f 0x4 "${rep1}/${replicates[0]}.marked.cleaned.chrsorted.bam")
-		count2=$(samtools view -c -f 0x4 "${rep2}/${replicates[1]}.marked.cleaned.chrsorted.bam")
-		count3=$(samtools view -c -f 0x4 "${rep3}"/${replicates[2]}.marked.cleaned.chrsorted.bam)
+		count1=$(samtools view -c -f 0x2 ${rep1_dir}/${replicates[0]}.marked.cleaned.chrsorted.bam)
+		count2=$(samtools view -c -f 0x2 ${rep2_dir}/${replicates[1]}.marked.cleaned.chrsorted.bam)
+		count3=$(samtools view -c -f 0x2 ${rep3_dir}/${replicates[2]}.marked.cleaned.chrsorted.bam)
 
-		echo -e "\n Counts for rep 1: ${counts1} \n for rep 2: ${counts2} \n for rep 3: ${counts3} \n"
+		echo -e "\n Counts for rep 1: ${count1} \n for rep 2: ${count2} \n for rep 3: ${count3} \n"
 
 		# find minimum reads
-		minCount=$(printf "%s\n" ${count1} ${count2} ${count3} | sort -n | head -n)
-		echo -e "\n The minimum count is: ${minCount} /n"
+		minCount=$(printf "%s\n" ${count1} ${count2} ${count3} | sort -n | head -n 1)
+		echo -e "\n The minimum count is: ${minCount} \n"
 
 		for rep in "${replicates[@]}"; do
+
+		# count again so can find the fraction for downsampling
+		bam=${dir}/${mod}/${rep}/${rep}.marked.cleaned.chrsorted.bam
+		count=$(samtools view -c -f 0x2 ${bam})
+		fraction=$(awk -v min=${minCount} -v total=${count} 'BEGIN{print min/total}')
+
+		# samtools subsampling can't accept a fraciton of 1
+		if (( $(echo "${fraction} >= 1" | bc -l) )); then
+			fraction=0.999999
+		fi
 
 		# downsample each replicate
 		samtools view -@ 16 \
 			-b \
 			--subsample-seed 42 \
-			--subsample-count ${min_reads} \
-			-o ${rep}/${rep}.merged.ds.bam \
-			${rep}/${rep}.ds.bam
+			--subsample ${fraction} \
+			-o ${rep}/${rep}.ds.bam \
+			${bam}
 
-		echo -e "\n Downsampled ${rep} to $(samtools view -c -f 0x2 ${rep}/${rep}.ds.bam) reads \n"
+		new_count=$(samtools view -c -f 0x2 ${rep}/${rep}.ds.bam)
+		echo -e "\n Downsampled ${rep} from ${count} reads to ${new_count} reads \n"
 
 		done
 
 		# merge the 3 replicates
-		samtools merge -@ 16 ${base_name}.merged.ds.bam \
-			${rep1} \
-			${rep2} \
-			${rep3}
+		samtools merge -@ 16 \
+			-o ${base_name}.ds.merged.bam \
+			${rep1_dir}/${replicates[0]}.ds.bam \
+			${rep2_dir}/${replicates[1]}.ds.bam \
+			${rep3_dir}/${replicates[2]}.ds.bam
 
-		samtools sort -o ${base_name}.merged.ds.chrsorted.bam \
-		-T ${base_name}.merged.ds.chrsorted \
-		-@ 16 ${base_name}.merged.ds.bam
+		# sort by coordinate and index
+		samtools sort -@ 16 \
+			${base_name}.ds.merged.bam \
+			-o ${base_name}.ds.merged.chrsorted.bam \
+			-T ${base_name}.ds.merged.chrsorted
 
-		samtools index ${base_name}.merged.ds.chrsorted.bam 
+		samtools index ${base_name}.ds.merged.chrsorted.bam 
 
 		# convert to bigwig
-		bamCoverage -b ${base_name}.merged.ds.chrsorted.bam \
-			-o ${base_name}.merged.ds.bw \
+		bamCoverage -b ${base_name}.ds.merged.chrsorted.bam \
+			-o ${base_name}.ds.merged.bw \
   			--normalizeUsing CPM \
   			--binSize 10
 
@@ -116,16 +130,22 @@ echo -e "\n ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ [$(timestamp)] Starting ${mod} 
 
 		# 	echo -e "\n ######## [$(timestamp)] Converting ${rep}.bam to bigwig ######## \n"
 		
+		# 	# make a bigwig for each replicate
 		# 	bamCoverage -b ${rep}.marked.cleaned.chrsorted.bam \
-  		# 	-o ${rep}.bw \
-  		# 	--normalizeUsing CPM \
-  		# 	--binSize 10
+  		# 		-o ${rep}.bw \
+  		# 		--normalizeUsing CPM \
+  		# 		--binSize 10
 
 		# 	echo -e "\n [$(timestamp)] Finished \n"
 		# done
 
-		rm  ${base_name}.merged.ds.bam 
-			# add downsampled!
+		cd ${dir}/${mod}/
+
+		rm  ${rep1_dir}/${replicates[0]}.ds.bam \
+			${rep2_dir}/${replicates[1]}.ds.bam \
+			${rep3_dir}/${replicates[2]}.ds.bam \
+			${base_name}.ds.merged.bam
+			
 
 	done
 
