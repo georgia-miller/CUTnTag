@@ -44,9 +44,10 @@ mm10_genome=/scratch/prj/id_hill_sims_wellcda/CUTnTag/mm10.genome.size
 # load the Anaconda module
 module load anaconda3/2022.10-gcc-13.2.0
 
-# source conda so it works in non-interactive shells
+# source conda and bash so it works in non-interactive shells
 #source $(dirname $(which conda))/../etc/profile.d/conda.sh
 eval "$(conda shell.bash hook)"
+eval "$(mamba shell hook --shell=bash)"
 
 # set an error trap
 set -o errexit # stop if encounter an error
