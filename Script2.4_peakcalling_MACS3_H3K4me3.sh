@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=Script2.4_MACS3_H3K4me3_WT_test
-#SBATCH --time=48:00:00
+#SBATCH --job-name=Script2_H3K4me3
+#SBATCH --time=06:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=100G
-#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2.4_MACS3_test_%j.log
-#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2.4_MACS3_test_%j.log
+#SBATCH --mem=30G
+#SBATCH --output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2.4_MACS3_H3K4me3_%j.log
+#SBATCH --error=/scratch/prj/id_hill_sims_wellcda/CUTnTag/logs/Script2.4_MACS3_H3K4me3_%j.log
 
 
 #######################################################
@@ -41,11 +41,9 @@ dir_input=/scratch/prj/id_hill_sims_wellcda/CUTnTag/merged_fastqs
 dir_output=/scratch/prj/id_hill_sims_wellcda/CUTnTag/alignment_peakcalling/${modification}
 mm10_genome=/scratch/prj/id_hill_sims_wellcda/CUTnTag/mm10.genome.size
 
-# load the Anaconda module
-module load anaconda3/2022.10-gcc-13.2.0
-
 # source conda so it works in non-interactive shells
 #source $(dirname $(which conda))/../etc/profile.d/conda.sh
+source /users/k2477939/conda/etc/profile.d/conda.sh
 eval "$(conda shell.bash hook)"
 
 # set an error trap
@@ -59,7 +57,7 @@ trap 'echo -e "\n [$(timestamp)] Error in ${BASH_COMMAND}. Exiting. \n" >&2; exi
 #######################################################
 
 # define an array of base names that can be looped over
-conditions=("${modification}_WT")
+conditions=("${modification}_UI" "${modification}_WT" "${modification}_SteE" "${modification}_IL10")
 
 for base_name in "${conditions[@]}"; do
 
@@ -113,7 +111,7 @@ for base_name in "${conditions[@]}"; do
 			${rep}_macs3_treat_pileup.sorted.bdg
 	done
 
-	conda  deactivate
+	conda deactivate
 
 	######################################################
 	############## merge CUT&Tag replicates ##############
@@ -139,7 +137,7 @@ for base_name in "${conditions[@]}"; do
 	# 	-T ${base_name}.merged.chrsorted \
 	# 	-@ 16 ${base_name}.merged.bam
 
-	# samtools index ${base_name}.merged.chrsorted.bam 
+	# samtools index ${base_name}.merged.chrsorted.bam
 
 	# rm ${base_name}.merged.bam
 
@@ -202,15 +200,14 @@ for base_name in "${conditions[@]}"; do
 	awk '$4>=2 {print $1"\t"$2"\t"$3"\t"$4}' ${base_name}_macs3.multiinter.bed > ${base_name}_macs3.consensus_peaks_raw.bed 
 
 	# merge any overlapping/bookmarked peaks
-	bedtools merge -i ${base_name}_macs3.consensus_peaks_raw.bed > ${base_name}_macs3.consensus_peaks.bed 
+	bedtools merge -i ${base_name}_macs3.consensus_peaks_raw.bed > ${base_name}_macs3.consensus_peaks.bed
 
 	echo -e "\n [${timestamp}] Finished identifying reproducible peaks (peaks in => 2/3 replicates) for ${base_name} \n"
-
 
 	echo -e "\n ######## [${timestamp}] ${base_name} completed ######## \n"
 
 	rm  ${base_name}_macs3.multiinter.bed \
-		${base_name}_macs3.consensus_peaks_raw.bed 
+		${base_name}_macs3.consensus_peaks_raw.bed
 
 	conda deactivate
 

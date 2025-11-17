@@ -104,22 +104,22 @@ echo -e "\n ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ [$(timestamp)] Starting ${mod} 
 
 		# merge the 3 replicates
 		samtools merge -@ 16 \
-			-o ${base_name}.ds.merged.bam \
+			-o ${base_name}/${base_name}.ds.merged.bam \
 			${rep1_dir}/${replicates[0]}.ds.bam \
 			${rep2_dir}/${replicates[1]}.ds.bam \
 			${rep3_dir}/${replicates[2]}.ds.bam
 
 		# sort by coordinate and index
 		samtools sort -@ 16 \
-			${base_name}.ds.merged.bam \
-			-o ${base_name}.ds.merged.chrsorted.bam \
-			-T ${base_name}.ds.merged.chrsorted
+			${base_name}/${base_name}.ds.merged.bam \
+			-o ${base_name}/${base_name}.ds.merged.chrsorted.bam \
+			-T ${base_name}/${base_name}.ds.merged.chrsorted
 
-		samtools index ${base_name}.ds.merged.chrsorted.bam 
+		samtools index ${base_name}/${base_name}.ds.merged.chrsorted.bam 
 
 		# convert to bigwig
-		bamCoverage -b ${base_name}.ds.merged.chrsorted.bam \
-			-o ${base_name}.ds.merged.bw \
+		bamCoverage -b ${base_name}/${base_name}.ds.merged.chrsorted.bam \
+			-o ${base_name}/${base_name}.ds.merged.bw \
   			--normalizeUsing CPM \
   			--binSize 10
 
@@ -144,7 +144,7 @@ echo -e "\n ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ [$(timestamp)] Starting ${mod} 
 		rm  ${rep1_dir}/${replicates[0]}.ds.bam \
 			${rep2_dir}/${replicates[1]}.ds.bam \
 			${rep3_dir}/${replicates[2]}.ds.bam \
-			${base_name}.ds.merged.bam
+			${base_name}/${base_name}.ds.merged.bam
 			
 
 	done
